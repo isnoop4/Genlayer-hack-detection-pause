@@ -1,0 +1,7 @@
+SECURITY ALERT: TestSwap exploit in progress
+
+At 14:02 UTC attackers began draining TestSwap liquidity pools using a flash-loan
+price manipulation. Roughly 4.2 million dollars in tokens have already left the pools
+and the drain is still going on. The TestSwap team confirmed the attack and says it is
+investigating. Users are advised to withdraw liquidity and avoid new deposits until
+the team publishes an all-clear.

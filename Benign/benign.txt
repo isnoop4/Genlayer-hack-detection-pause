@@ -1,0 +1,6 @@
+TestSwap weekly update
+
+This week TestSwap shipped a new fee dashboard and improved the mobile layout.
+A routine maintenance window is planned for Sunday and no downtime is expected.
+The external audit finished with no critical findings, and all minor notes were fixed.
+Trading volume and liquidity are stable. Thank you for being part of the community.
