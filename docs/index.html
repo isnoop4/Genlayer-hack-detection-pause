@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hack Detection and Emergency Pause on GenLayer</title>
+<meta name="description" content="Register a protocol, let GenLayer validators read public security sources, and see it pause automatically when an exploit is reported (Studionet prototype).">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #f3f2ee;
+  --card: #ffffff;
+  --ink: #1c1f23;
+  --ink-soft: #5b616a;
+  --line: #d9d6cf;
+  --btn: #1c1f23;
+  --btn-ink: #ffffff;
+  --ok: #0f766e;
+  --warn: #b45309;
+  --bad: #c1272d;
+  --crit: #8a1117;
+  --focus: #2563eb;
+  --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14161a; --card: #1c1f25; --ink: #eceef1; --ink-soft: #9aa1ab; --line: #2f343c;
+    --btn: #eceef1; --btn-ink: #14161a; --ok: #4fd1c5; --warn: #f0a94b; --bad: #ff7b72; --crit: #ff4d4d; --focus: #7aa2ff;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14161a; --card: #1c1f25; --ink: #eceef1; --ink-soft: #9aa1ab; --line: #2f343c;
+  --btn: #eceef1; --btn-ink: #14161a; --ok: #4fd1c5; --warn: #f0a94b; --bad: #ff7b72; --crit: #ff4d4d; --focus: #7aa2ff;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light dark; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.5; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 28px 20px 64px; }
+
+header.top { display: flex; flex-wrap: wrap; gap: 12px 32px; align-items: flex-end; justify-content: space-between; margin-bottom: 28px; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(1.9rem, 4.2vw, 2.8rem); line-height: 1.02; margin: 0 0 8px; letter-spacing: -0.01em; }
+.lede { margin: 0; max-width: 58ch; color: var(--ink-soft); }
+.chain { font-size: 0.9rem; color: var(--ink-soft); text-align: right; }
+.chain code { font-size: 0.85rem; background: var(--card); border: 1px solid var(--line); padding: 2px 6px; border-radius: 4px; word-break: break-all; }
+
+.layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 860px) { .layout { grid-template-columns: 1fr; } .chain { text-align: left; } }
+
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 18px; }
+.panel h2 { font-family: var(--display); font-size: 1.15rem; margin: 0 0 12px; font-weight: 800; }
+.hint { margin: 0 0 12px; font-size: 0.88rem; color: var(--ink-soft); }
+
+label { display: block; font-size: 0.88rem; font-weight: 500; margin: 12px 0 4px; }
+input, textarea, select { width: 100%; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 9px 10px; }
+
+.btn { font: inherit; font-weight: 600; cursor: pointer; background: var(--btn); color: var(--btn-ink); border: 1px solid var(--btn); border-radius: 6px; padding: 8px 14px; }
+.btn:hover { opacity: 0.88; }
+.btn[disabled] { opacity: 0.6; cursor: progress; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn.alert { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn.block { width: 100%; margin-top: 16px; padding: 11px; }
+.btn.small { padding: 5px 10px; font-size: 0.85rem; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.who { font-size: 0.9rem; word-break: break-all; margin: 0 0 8px; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0 0 18px; padding: 0; }
+.stats div { display: flex; gap: 8px; align-items: baseline; }
+.stats dt { color: var(--ink-soft); font-size: 0.9rem; }
+.stats dd { margin: 0; font-family: var(--display); font-weight: 800; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+
+.board-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.board-head h2 { font-family: var(--display); font-size: 1.5rem; margin: 0; }
+
+.watch { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px 18px 16px; margin-bottom: 16px; overflow: hidden; }
+.watch::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 6px; background: var(--ok); }
+.watch[data-status="PAUSED"]::before { background: repeating-linear-gradient(-45deg, var(--bad) 0 10px, var(--crit) 10px 20px); }
+.watch[data-status="PAUSED"] { border-color: var(--bad); }
+.top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.watch h3 { font-family: var(--display); font-size: 1.3rem; font-weight: 800; margin: 0; }
+.owner { font-size: 0.82rem; color: var(--ink-soft); }
+.badge { display: inline-flex; align-items: center; gap: 7px; font-family: var(--display); font-weight: 800; font-size: 0.9rem; border: 2px solid currentColor; border-radius: 4px; padding: 2px 10px; color: var(--ok); white-space: nowrap; }
+.badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.badge.paused { color: var(--bad); }
+
+.meter { margin: 16px 0 6px; }
+.meter-label { display: flex; justify-content: space-between; gap: 8px; font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 6px; }
+.meter-label strong { color: var(--ink); }
+.cells { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.cell { text-align: center; font-size: 0.78rem; font-weight: 600; padding: 7px 2px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-soft); background: var(--paper); }
+.cell.zone { border-style: dashed; border-color: var(--bad); }
+.cell.on { color: #fff; border-style: solid; border-color: transparent; }
+.cell.lv1.on { background: var(--ok); }
+.cell.lv2.on { background: var(--warn); }
+.cell.lv3.on { background: var(--bad); }
+.cell.lv4.on { background: var(--crit); }
+.zone-note { font-size: 0.78rem; color: var(--bad); margin-top: 5px; }
+
+.summary { margin: 12px 0 4px; }
+.evidence { font-size: 0.88rem; color: var(--ink-soft); margin: 0 0 10px; }
+.meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px 18px; font-size: 0.86rem; color: var(--ink-soft); margin: 10px 0 0; }
+.meta b { color: var(--ink); font-weight: 500; }
+.meta a { word-break: break-all; }
+
+details { margin-top: 12px; font-size: 0.9rem; }
+summary { cursor: pointer; font-weight: 600; }
+.check { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; }
+.check b { display: block; margin-bottom: 4px; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+.empty { border: 1px dashed var(--line); border-radius: 10px; padding: 28px; text-align: center; color: var(--ink-soft); }
+
+#status { position: sticky; top: 0; z-index: 5; margin: 0 0 18px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); font-size: 0.92rem; display: none; overflow: hidden; }
+#status.show { display: block; }
+#status.err { border-color: var(--bad); color: var(--bad); }
+#status.ok { border-color: var(--ok); }
+#status.wait { border-color: var(--ink); }
+
+.log { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow: auto; font-size: 0.82rem; color: var(--ink-soft); }
+.log li { padding: 5px 0; border-top: 1px solid var(--line); word-break: break-all; }
+.log li:first-child { border-top: 0; }
+footer { margin-top: 36px; font-size: 0.85rem; color: var(--ink-soft); max-width: 72ch; }
+
+@media (prefers-reduced-motion: no-preference) {
+  #status.show { animation: drop 0.25s ease-out; }
+  @keyframes drop { from { opacity: 0; transform: translateY(-8px); } }
+  #status.wait::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 35%; background: var(--ink); animation: sweep 1.3s ease-in-out infinite; }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+
+  .btn.busy::before { content: ""; display: inline-block; width: 0.8em; height: 0.8em; margin-right: 8px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -0.1em; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Threat cells light up one by one, like a signal climbing the scale */
+  .watch.enter .cell.on, .watch.changed .cell.on { animation: light 0.4s ease-out backwards; animation-delay: calc(var(--i, 0) * 90ms + var(--n, 0) * 110ms + 100ms); }
+  @keyframes light { from { opacity: 0; transform: scaleY(0.4); } }
+
+  .watch.changed { animation: ring 1.3s ease-out; }
+  @keyframes ring { from { box-shadow: 0 0 0 5px color-mix(in srgb, var(--ink) 30%, transparent); } to { box-shadow: 0 0 0 5px transparent; } }
+  .watch.alarm { animation: alarm 1.6s ease-out, shake 0.5s 0.1s; }
+  @keyframes alarm {
+    0%, 40%, 80% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--bad) 55%, transparent); }
+    20%, 60%, 100% { box-shadow: 0 0 0 6px transparent; }
+  }
+  @keyframes shake { 20% { transform: translateX(-6px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+  .watch.cleared { animation: cleared 1.4s ease-out; }
+  @keyframes cleared { from { box-shadow: 0 0 0 6px color-mix(in srgb, var(--ok) 50%, transparent); } to { box-shadow: 0 0 0 6px transparent; } }
+
+  .badge.paused::before { animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: 0.2; } }
+  .watch[data-status="PAUSED"]::before { background-size: 28px 28px; animation: march 1.2s linear infinite; }
+  @keyframes march { to { background-position: 28px 0; } }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Pause the protocol before the damage spreads</h1>
+      <p class="lede">Register a protocol with public security sources. GenLayer validators read them, rate the threat, and flip the protocol to paused when an exploit is reported. A Studionet prototype: it records a pause flag and does not freeze real funds.</p>
+    </div>
+    <div class="chain">
+      Contract<br>
+      <code id="contractAddr"></code><br>
+      <a id="explorerLink" target="_blank" rel="noopener">View in explorer</a>
+    </div>
+  </header>
+
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <div class="layout">
+    <aside>
+      <section class="panel" aria-labelledby="acct-h">
+        <h2 id="acct-h">Your account</h2>
+        <p class="hint">A test account is created in this browser on your first visit. It only works on Studionet.</p>
+        <p class="who"><strong id="acctNum">Account</strong><br><span id="acctAddr">…</span></p>
+        <div class="btns">
+          <button class="btn ghost small" id="copyAddr" type="button">Copy address</button>
+          <button class="btn ghost small" id="newAcct" type="button">New account</button>
+          <button class="btn ghost small" id="switchAcct" type="button">Switch account</button>
+          <button class="btn ghost small" id="importKey" type="button">Import key</button>
+        </div>
+        <p class="hint" style="margin-top:12px">Only the account that registered a protocol (or the contract owner) can resume it after a pause.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="reg-h">
+        <h2 id="reg-h">Watch a protocol</h2>
+        <label for="fName" style="margin-top:0">Protocol name</label>
+        <input id="fName" maxlength="80" placeholder="TestSwap">
+        <label for="fA">Source A (https link)</label>
+        <input id="fA" type="url" placeholder="https://raw.githubusercontent.com/…/tests/benign.txt">
+        <label for="fB">Source B (optional)</label>
+        <input id="fB" type="url" placeholder="https://…">
+        <p class="hint" style="margin-top:6px">Sources are read by validators. Plain-text pages work best, such as a status page or a raw text file. The repository has two samples in <code>tests/</code>.</p>
+        <button class="btn block" id="submitWatch" type="button">Start watching</button>
+      </section>
+
+      <section class="panel" aria-labelledby="adm-h">
+        <h2 id="adm-h">Pause threshold</h2>
+        <p class="hint">The threat level at which a protocol is paused. Only the contract owner can change it.</p>
+        <label for="fThr" style="margin-top:0">Pause at</label>
+        <select id="fThr">
+          <option value="1">Low or above</option>
+          <option value="2">Medium or above</option>
+          <option value="3" selected>High or above</option>
+          <option value="4">Critical only</option>
+        </select>
+        <button class="btn block" id="setThr" type="button">Update threshold</button>
+      </section>
+
+      <section class="panel" aria-labelledby="log-h">
+        <h2 id="log-h">Activity</h2>
+        <ul class="log" id="log"><li>Nothing yet.</li></ul>
+      </section>
+    </aside>
+
+    <main>
+      <dl class="stats">
+        <div><dt>Protocols watched</dt><dd id="sCount">–</dd></div>
+        <div><dt>Pauses at</dt><dd id="sThr">–</dd></div>
+      </dl>
+      <div class="board-head">
+        <h2>Watchlist</h2>
+        <button class="btn ghost small" id="refresh" type="button">Refresh</button>
+      </div>
+      <div id="board"></div>
+    </main>
+  </div>
+
+  <footer>
+    Prototype only. AI threat ratings summarize public sources and can be wrong, so a pause is a signal to investigate, not proof of an attack. Connect <code>is_paused()</code> to a real guard before relying on it.
+  </footer>
+</div>
+
+<script type="module">
+import { createClient, createAccount, generatePrivateKey } from "https://esm.sh/genlayer-js";
+import { studionet } from "https://esm.sh/genlayer-js/chains";
+
+const CONTRACT = "0xBA648625C946713743a43CDe8e6682Fa8Ae63273";
+const EXPLORER = "https://explorer-studio.genlayer.com/address/" + CONTRACT;
+const KEYS_STORE = "hdp_demo_keys";
+const ACTIVE_STORE = "hdp_demo_active";
+const MAX_SHOWN = 30;
+const LEVELS = ["NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
+const LEVEL_LABEL = ["None", "Low", "Medium", "High", "Critical"];
+
+const $ = (id) => document.getElementById(id);
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function h(tag, props = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v === false || v == null) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+
+function plain(v) {
+  if (v instanceof Map) return Object.fromEntries([...v.entries()].map(([k, x]) => [k, plain(x)]));
+  if (typeof v === "bigint") return v.toString();
+  if (Array.isArray(v)) return v.map(plain);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
+  return v;
+}
+const short = (a) => (a && a.length > 12 ? a.slice(0, 6) + "…" + a.slice(-4) : a || "–");
+const same = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/* ---------- accounts ---------- */
+let account;
+let client;
+
+function readKeys() {
+  try {
+    const k = JSON.parse(localStorage.getItem(KEYS_STORE) || "[]");
+    return Array.isArray(k) ? k : [];
+  } catch { return []; }
+}
+function activeIndex(count) {
+  const n = Number(localStorage.getItem(ACTIVE_STORE) || 0);
+  return n >= 0 && n < count ? n : 0;
+}
+function addKey(pk) {
+  const keys = readKeys();
+  keys.push(pk);
+  localStorage.setItem(KEYS_STORE, JSON.stringify(keys));
+  localStorage.setItem(ACTIVE_STORE, String(keys.length - 1));
+}
+function loadAccount() {
+  let keys = readKeys();
+  if (!keys.length) {
+    keys = [generatePrivateKey()];
+    localStorage.setItem(KEYS_STORE, JSON.stringify(keys));
+  }
+  const active = activeIndex(keys.length);
+  account = createAccount(keys[active]);
+  client = createClient({ chain: studionet, account });
+  $("acctAddr").textContent = account.address;
+  $("acctNum").textContent = "Account " + (active + 1) + " of " + keys.length;
+}
+
+/* ---------- status + log ---------- */
+let statusTimer;
+function say(message, kind = "") {
+  const el = $("status");
+  el.textContent = message;
+  el.className = "show " + kind;
+  clearTimeout(statusTimer);
+  if (kind && kind !== "wait") statusTimer = setTimeout(() => { el.className = ""; }, 9000);
+}
+function log(message) {
+  const list = $("log");
+  if (list.children.length === 1 && list.children[0].textContent === "Nothing yet.") list.innerHTML = "";
+  list.prepend(h("li", {}, new Date().toLocaleTimeString() + "  " + message));
+}
+
+/* ---------- contract calls ---------- */
+async function read(functionName, args = []) {
+  const res = await client.readContract({ address: CONTRACT, functionName, args });
+  return plain(res);
+}
+
+function executionError(receipt) {
+  const lr = receipt?.consensus_data?.leader_receipt?.[0];
+  const result = lr?.execution_result || receipt?.txExecutionResultName || receipt?.result_name;
+  if (result !== "ERROR" && result !== "FINISHED_WITH_ERROR") return null;
+  const text = lr?.genvm_result?.stderr || lr?.result?.payload?.readable || "";
+  return String(text).trim().split("\n").filter(Boolean).pop() || "The contract rejected this action.";
+}
+
+async function write(functionName, args = []) {
+  const hash = await client.writeContract({ address: CONTRACT, functionName, args, value: 0n });
+  log(functionName + " sent " + short(hash));
+  say("Waiting for validators to agree on " + functionName + ". A threat check can take a minute or two.", "wait");
+  const receipt = await client.waitForTransactionReceipt({ hash, status: "ACCEPTED", retries: 120, interval: 3000 });
+  const err = executionError(receipt);
+  if (err) { log(functionName + " rejected: " + err); throw new Error(err); }
+  log(functionName + " accepted");
+  return receipt;
+}
+
+function friendly(e) {
+  const m = String(e?.message || e);
+  const known = [
+    "Unknown watch ID",
+    "Only contract owner can set the pause threshold",
+    "Threshold must be between 1 and 4",
+    "Protocol is not paused",
+    "Only the registrant or contract owner can resume",
+    "Name must contain 1-80 characters",
+    "Source A must start with https://",
+    "Source B must be empty or start with https://",
+  ].find((k) => m.includes(k));
+  return known || m.split("\n")[0].slice(0, 220);
+}
+
+async function run(button, work, doneMessage) {
+  const label = button.textContent;
+  button.disabled = true;
+  button.classList.add("busy");
+  button.textContent = "Waiting…";
+  try {
+    await work();
+    say(doneMessage, "ok");
+  } catch (e) {
+    say(friendly(e), "err");
+  } finally {
+    button.disabled = false;
+    button.classList.remove("busy");
+    button.textContent = label;
+    refresh();
+  }
+}
+
+/* ---------- motion helpers ---------- */
+const seen = new Map(); // watch id -> { key, status }
+let refreshToken = 0;
+
+function countTo(el, to) {
+  const from = Number(el.textContent) || 0;
+  if (from === to || reduce.matches) { el.textContent = to; return; }
+  const start = performance.now();
+  const tick = (t) => {
+    const p = Math.min((t - start) / 600, 1);
+    el.textContent = Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3)));
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/* ---------- rendering ---------- */
+let threshold = 3;
+
+function parseReview(text) {
+  const out = { level: "", summary: "", evidence: "" };
+  for (const line of String(text || "").split("\n")) {
+    const s = line.trim();
+    if (/^LEVEL:/i.test(s)) out.level = s.slice(6).trim();
+    else if (/^SUMMARY:/i.test(s)) out.summary = s.slice(8).trim();
+    else if (/^EVIDENCE:/i.test(s)) out.evidence = s.slice(9).trim();
+  }
+  return out;
+}
+
+function sourceLink(url) {
+  return /^https:\/\//.test(url) ? h("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, url) : h("b", {}, url);
+}
+
+function watchCard(w, anim = "", idx = 0, wasPaused = false) {
+  const level = LEVELS.includes(w.last_level) ? w.last_level : "NONE";
+  const rank = LEVELS.indexOf(level);
+  const paused = w.status === "PAUSED";
+  const checked = Number(w.check_count) > 0;
+  const review = parseReview(w.last_review);
+
+  const cells = h("div", { class: "cells" });
+  for (let i = 1; i <= 4; i++) {
+    cells.append(h("span", {
+      class: "cell lv" + i + (rank >= i ? " on" : "") + (i >= threshold ? " zone" : ""),
+      style: "--n:" + i,
+      title: LEVEL_LABEL[i],
+    }, LEVEL_LABEL[i]));
+  }
+
+  const act = (label, cls, fn, done) =>
+    h("button", { class: "btn small " + cls, type: "button", onclick: (e) => run(e.currentTarget, fn, done) }, label);
+  const actions = h("div", { class: "actions" },
+    act("Run threat check", "", () => write("check_threat", [w.watch_id]), "Threat check finished for " + w.name + "."),
+    paused ? act("Resume protocol", "ghost", () => write("resume_protocol", [w.watch_id]), w.name + " resumed.") : null
+  );
+
+  const history = h("details", {
+    ontoggle: async (e) => {
+      const box = e.currentTarget;
+      if (!box.open || box.dataset.loaded === w.check_count) return;
+      box.dataset.loaded = w.check_count;
+      const list = h("div", {}, "Loading…");
+      box.replaceChildren(h("summary", {}, "Check history (" + w.check_count + ")"), list);
+      const items = [];
+      for (let n = Number(w.check_count); n >= 1; n--) {
+        try { items.push(await read("get_check", [w.watch_id, String(n)])); } catch { items.push("(unavailable)"); }
+      }
+      list.replaceChildren(...items.map((t, i) => h("div", { class: "check" }, h("b", {}, "Check #" + (Number(w.check_count) - i)), t)));
+    },
+  }, h("summary", {}, "Check history (" + w.check_count + ")"));
+
+  const cls = "watch" + (anim ? " " + anim : "")
+    + (anim === "changed" && paused ? " alarm" : "")
+    + (anim === "changed" && !paused && wasPaused ? " cleared" : "");
+
+  return h("article", { class: cls, "data-status": w.status, style: "--i:" + Math.min(idx, 6) },
+    h("div", { class: "top-row" },
+      h("div", {},
+        h("h3", {}, "#" + w.watch_id + " " + w.name),
+        h("div", { class: "owner" }, "Registered by " + short(w.registrant) + (same(w.registrant, account.address) ? " (you)" : ""))
+      ),
+      h("span", { class: "badge" + (paused ? " paused" : "") }, paused ? "Paused" : "Active")
+    ),
+    h("div", { class: "meter" },
+      h("div", { class: "meter-label" }, h("span", {}, "Threat level"), h("strong", {}, checked ? LEVEL_LABEL[rank] : "Not checked yet")),
+      cells,
+      h("div", { class: "zone-note" }, "Pauses at " + LEVEL_LABEL[threshold] + (threshold < 4 ? " or above" : " only"))
+    ),
+    review.summary ? h("p", { class: "summary" }, review.summary) : null,
+    review.evidence ? h("p", { class: "evidence" }, "Evidence: " + review.evidence) : null,
+    h("div", { class: "meta" },
+      h("div", {}, "Source A ", sourceLink(w.source_a)),
+      w.source_b ? h("div", {}, "Source B ", sourceLink(w.source_b)) : null,
+      h("div", {}, "Checks ", h("b", {}, w.check_count), " · Pauses ", h("b", {}, w.pause_count))
+    ),
+    Number(w.check_count) > 0 ? history : null,
+    actions
+  );
+}
+
+async function refresh() {
+  const token = ++refreshToken;
+  try {
+    const stats = await read("get_protocol_stats");
+    if (token !== refreshToken) return;
+    threshold = Math.min(4, Math.max(1, Number(stats.pause_threshold || 3)));
+    const count = Number(stats.watch_count || 0);
+    countTo($("sCount"), count);
+    $("sThr").textContent = LEVEL_LABEL[threshold];
+    $("fThr").value = String(threshold);
+
+    const board = $("board");
+    if (count === 0) {
+      board.replaceChildren(h("div", { class: "empty" }, "Nothing is being watched yet. Add a protocol from the form."));
+      return;
+    }
+    const first = Math.max(1, count - MAX_SHOWN + 1);
+    const ids = [];
+    for (let i = count; i >= first; i--) ids.push(String(i));
+    const watches = await Promise.all(ids.map((id) => read("get_watch", [id]).catch(() => null)));
+    if (token !== refreshToken) return;
+
+    const cards = watches.filter(Boolean).map((w, idx) => {
+      const prev = seen.get(w.watch_id);
+      const key = w.status + "|" + w.last_level + "|" + w.check_count;
+      const anim = !prev ? "enter" : prev.key !== key ? "changed" : "";
+      const wasPaused = prev?.status === "PAUSED";
+      seen.set(w.watch_id, { key, status: w.status });
+      return watchCard(w, anim, idx, wasPaused);
+    });
+    board.replaceChildren(...cards);
+  } catch (e) {
+    $("board").replaceChildren(h("div", { class: "empty" }, "Could not read the contract. Check your connection and refresh. (" + friendly(e) + ")"));
+  }
+}
+
+/* ---------- wiring ---------- */
+$("contractAddr").textContent = CONTRACT;
+$("explorerLink").href = EXPLORER;
+
+$("copyAddr").onclick = async () => {
+  try { await navigator.clipboard.writeText(account.address); say("Address copied.", "ok"); }
+  catch { say("Copy failed. Select the address and copy it manually.", "err"); }
+};
+$("newAcct").onclick = () => {
+  addKey(generatePrivateKey());
+  loadAccount();
+  say("New test account created and selected. Use Switch account to go back to the previous one.", "ok");
+  refresh();
+};
+$("switchAcct").onclick = () => {
+  const keys = readKeys();
+  if (keys.length < 2) return say("You only have one account. Create a second one with New account.", "err");
+  const next = (activeIndex(keys.length) + 1) % keys.length;
+  localStorage.setItem(ACTIVE_STORE, String(next));
+  loadAccount();
+  say("Switched to account " + (next + 1) + " of " + keys.length + ".", "ok");
+  refresh();
+};
+$("importKey").onclick = () => {
+  const pk = prompt("Paste a Studionet test account private key (0x…). Never use a key that holds real funds.");
+  if (!pk) return;
+  try {
+    const trimmed = pk.trim();
+    createAccount(trimmed);
+    addKey(trimmed);
+    loadAccount();
+    say("Account imported and selected.", "ok");
+    refresh();
+  } catch {
+    say("That key is not valid. It should start with 0x and have 64 hex characters.", "err");
+  }
+};
+
+$("submitWatch").onclick = (e) => {
+  const name = $("fName").value.trim();
+  const a = $("fA").value.trim();
+  const b = $("fB").value.trim();
+  if (name.length < 1 || name.length > 80) return say("Enter a protocol name of 1 to 80 characters.", "err");
+  if (!a.startsWith("https://") || a.length > 300) return say("Source A must start with https:// (max 300 characters).", "err");
+  if (b && (!b.startsWith("https://") || b.length > 300)) return say("Source B must be empty or start with https://", "err");
+  run(e.currentTarget, async () => {
+    await write("register_protocol", [name, a, b]);
+    $("fName").value = ""; $("fA").value = ""; $("fB").value = "";
+  }, "Protocol added. Run a threat check on its card.");
+};
+
+$("setThr").onclick = (e) => {
+  const v = $("fThr").value;
+  run(e.currentTarget, () => write("set_pause_threshold", [BigInt(v)]), "Pause threshold updated.");
+};
+$("refresh").onclick = refresh;
+
+loadAccount();
+refresh();
+</script>
+</body>
+</html>
